@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 
 import java.time.LocalDate;
 
-@Entity
+@Entity(name = "User")
 @Table(name = "users")
 public class Users {
     @Id
@@ -12,12 +12,16 @@ public class Users {
     private int id;
     @Column(name = "is_admin")
     private boolean is_admin;
-    @Column(name = "login")
+    @Column(name = "login", unique = true)
     private String login;
     @Column(name = "password")
     private String password;
     @Column(name = "created")
     private LocalDate created;
+    @Column(name = "chatId")
+    private Long chatId;
+    @Column(name = "is_registered")
+    private boolean is_registered;
     @OneToOne
     @JoinColumn(name = "table_id", unique = true)
     private Tables tables;
@@ -28,7 +32,7 @@ public class Users {
     public Users() {
     }
 
-    public Users(int id, boolean is_admin, String login, String password, LocalDate created, Tables tables, Session action) {
+    public Users(int id, boolean is_admin, String login, String password, LocalDate created, Tables tables, Session action, Long chatId, boolean is_registered) {
         this.id = id;
         this.is_admin = is_admin;
         this.login = login;
@@ -36,6 +40,8 @@ public class Users {
         this.created = created;
         this.tables = tables;
         this.action = action;
+        this.chatId = chatId;
+        this.is_registered = is_registered;
     }
 
     public int getId() {
@@ -92,5 +98,21 @@ public class Users {
 
     public void setAction(Session action) {
         this.action = action;
+    }
+
+    public Long getChatId() {
+        return chatId;
+    }
+
+    public void setChatId(Long chatId) {
+        this.chatId = chatId;
+    }
+
+    public boolean isIs_registered() {
+        return is_registered;
+    }
+
+    public void setIs_registered(boolean is_registered) {
+        this.is_registered = is_registered;
     }
 }

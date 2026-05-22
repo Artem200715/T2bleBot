@@ -3,7 +3,7 @@ package db;
 import jakarta.persistence.*;
 
 
-@Entity
+@Entity(name = "UserTables")
 @Table(name = "tables")
 public class Tables {
     @Id
@@ -13,7 +13,9 @@ public class Tables {
     private String number;
     @Column(name = "floor")
     private int floor;
-    @OneToOne(mappedBy = "table")
+    @Column(name = "is_taken")
+    private boolean is_taken;
+    @OneToOne(mappedBy = "tables")
     private Users users;
 
     public Tables() {
@@ -56,5 +58,13 @@ public class Tables {
 
     public void setUsers(Users users) {
         this.users = users;
+    }
+
+    public void setIs_taken(boolean is_taken) {
+        this.is_taken = is_taken;
+    }
+
+    public boolean isIs_taken() {
+        return is_taken;
     }
 }
