@@ -35,6 +35,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             ts.ensureUserExists(chatId);
             String session = ts.getSession(chatId);
             boolean isReg = ts.Is_registered(chatId);
+
             if ((messageText.equals("/start") && !isReg)) {
                 try {
                     sendStartButton(chatId, "Приветствую, что бы начать работу с ботом вам нужно зарегистрироваться, данные для регистрации вы можете получить от начальства");
@@ -107,6 +108,34 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                     sendMenuButton(chatId, adm, "Выберите действие");
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
+                }
+            } else if (session.equals("Вписывает логин")) {
+                boolean isHere = ts.findUserByLogin(messageText);
+                if (isHere) {
+                    ts.setUserSaves(chatId, messageText);
+                    ts.changeSession(chatId, "Принуд выб этажа");
+                    try {
+                        sendFloorsButton(chatId, "Выберите этаж на котором находится желаемое место");
+                    } catch (TelegramApiException e) {
+                        throw new RuntimeException(e);
+                    }
+                } else {
+                    sendMessage(chatId, "Пользователь не найден");
+                }
+            } else if (session.equals("Вписывает логин для удаления")) {
+                boolean isHere = ts.findUserByLogin(messageText);
+                boolean adm = ts.checkAdmin(chatId);
+                if (isHere) {
+
+                    sendMessage(chatId, ts.clearTable(messageText));
+                    ts.changeSession(chatId, "Ничего");
+                    try {
+                        sendMenuButton(chatId, adm, "Выберите действие :)");
+                    } catch (TelegramApiException e) {
+                        throw new RuntimeException(e);
+                    }
+                } else {
+                    sendMessage(chatId, "Пользователь не найден");
                 }
             }
         } else if(update.hasCallbackQuery()) {
@@ -194,6 +223,29 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
+            } else if(data.equals("aTakeTable") && isReg && ts.getSession(chatId).equals("Ничего")) {
+                ts.changeSession(chatId, "Вписывает логин");
+                editMessage(chatId, messageId, "Введите логин пользователя которому хотите занять место");
+            }else if (data.startsWith("table_") && isReg && ts.getSession(chatId).equals("Принуд выб места")) {
+                String tableNumber = data.substring(6);
+                editMessage(chatId, messageId, ts.takeTable(tableNumber, ts.getUserSaves(chatId)));
+                ts.changeSession(chatId, "Ничего");
+                try {
+                    sendMenuButton(chatId, adm, "Выберите действие");
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+            } else if (data.startsWith("floor_") && isReg && ts.getSession(chatId).equals("Принуд выб этажа")) {
+                String floorNumber = data.substring(6);
+                try {
+                    sendTablesButton(chatId, messageId, "Выберите место которое желаете занять", floorNumber);
+                    ts.changeSession(chatId, "Принуд выб места");
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+            } else if(data.equals("aClearTable") && isReg && ts.getSession(chatId).equals("Ничего")) {
+                ts.changeSession(chatId, "Вписывает логин для удаления");
+                editMessage(chatId, messageId, "Впишите логин пользователя, которого хотите снять с места");
             }else if (!isReg) {
                 sendMessage(chatId, "Вы не зарегистрировались!");
             } else {
@@ -344,6 +396,39 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         editMessage.setReplyMarkup(new InlineKeyboardMarkup(keyboard));
         telegramClient.execute(editMessage);
     }
+    public void sendFloorsButton(Long chatId, String answer) throws TelegramApiException {
+        Map<Integer, ArrayList<String>> tables = ts.getAllUntakenTables();
+
+        ArrayList<Integer> floors = new ArrayList<>(tables.keySet());
+        Collections.sort(floors);
+        List<InlineKeyboardRow> keyboard = new ArrayList<>();
+        InlineKeyboardRow currentRow = new InlineKeyboardRow();
+
+        for (Integer floor : floors) {
+            if (!tables.get(floor).isEmpty()) {
+                currentRow.add(createBtn(floor.toString(), "floor_" + floor.toString()));
+                if (currentRow.size() == 3) {
+                    keyboard.add(currentRow);
+                    currentRow = new InlineKeyboardRow();
+                }
+            } else {
+                answer = "Все этажи заняты!";
+            }
+        }
+
+        if (!currentRow.isEmpty()) {
+            keyboard.add(currentRow);
+        }
+        keyboard.add(new InlineKeyboardRow(
+                createBtn("Назад", "back")
+        ));
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(answer)
+                .build();
+        message.setReplyMarkup(new InlineKeyboardMarkup(keyboard));
+        telegramClient.execute(message);
+    }
     public void sendTablesButton(Long chatId, Integer messageId, String answer, String number) throws TelegramApiException {
         Map<Integer, ArrayList<String>> all = ts.getAllUntakenTables();
         EditMessageText editMessage = EditMessageText.builder()
@@ -373,6 +458,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         editMessage.setReplyMarkup(new InlineKeyboardMarkup(keyboard));
         telegramClient.execute(editMessage);
     }
+
     public void sendRoleButton(Long chatId, Integer messageId, String answer) throws TelegramApiException {
         EditMessageText editMessage = EditMessageText.builder()
                 .chatId(chatId)

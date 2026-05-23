@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class TablesService {
     private final Map<Long, Boolean> adminSessions = new ConcurrentHashMap<>();
+    private final Map<Long, String> loginSaves = new ConcurrentHashMap<>();
     @PersistenceContext
     private EntityManager entityManager;
     @Transactional
@@ -156,7 +157,7 @@ public class TablesService {
                 entityManager.persist(user);
                 entityManager.persist(table);
                 entityManager.flush();
-                return "Вы успешло поменяли своё место✔";
+                return "Вы успешло поменяли место пользователя✔";
             }
         }
     }
@@ -175,10 +176,13 @@ public class TablesService {
     }
     @Transactional
     public String clearTable(String login) {
-        TypedQuery<Users> query = entityManager.createQuery("SELECT u from User u WHERE login = :login", Users.class).setParameter("login", login);
+        TypedQuery<Users> query = entityManager.createQuery("SELECT u from User u WHERE u.login = :login", Users.class).setParameter("login", login);
         List<Users> users = query.getResultList();
         Users user = users.getFirst();
         Tables table = user.getTables();
+        if (user.getTables() == null) {
+            return "У пользователя и так ничего не занято";
+        }
         table.setUsers(null);
         table.setIs_taken(false);
         entityManager.persist(table);
@@ -292,9 +296,24 @@ public class TablesService {
 
         adminSessions.put(chatId, isAdmin);
     }
-
+    public void setUserSaves(Long chatId, String login) {
+        loginSaves.put(chatId, login);
+    }
+    public String getUserSaves(Long chatId) {
+        return loginSaves.getOrDefault(chatId, null);
+    }
     public boolean getAdminSession(Long chatId) {
         return adminSessions.getOrDefault(chatId, false);
+    }
+    @Transactional
+    public boolean findUserByLogin(String login) {
+        try {
+            TypedQuery<Users> query = entityManager.createQuery("SELECT u from User u WHERE login = :login", Users.class).setParameter("login", login);
+            Users user = query.getSingleResult();
+            return true;
+        } catch (NoResultException e) {
+            return false;
+        }
     }
     Users findUserByChatId(Long chatId) {
         try {
