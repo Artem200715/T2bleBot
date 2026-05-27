@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.telegram.telegrambots.meta.api.methods.groupadministration.CreateChatSubscriptionInviteLink;
 
+import java.lang.reflect.Array;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,7 +45,16 @@ public class TablesService {
         List<Users> users = query.getResultList();
             if(users != null) {
                 Users user = users.getFirst();
+                Tables tables = user.getTables();
+                if (tables != null) {
+                    tables.setUsers(null);
+                    tables.setIs_taken(false);
+                    entityManager.persist(tables);
+                }
                 entityManager.remove(user);
+
+
+
                 return "Пользователь успешно удалён";
             } else {
                 return "Такого пользователя не существует!";
@@ -52,42 +62,42 @@ public class TablesService {
 
     }
     @Transactional
-    // Короче, перво наперво надо сделать функцию для регистрации, ведь от неё будут отталкиваться другие функции, так же осталось сделать: функцию для занятия стола, функцию для снятия со стола, функцию для смены действия, и возможно что нибудь ещё вспомогательное
     public String login(Long chatId, String login, String password) {
-        TypedQuery<Users> query = entityManager.createQuery("SELECT u from User u WHERE login = :login", Users.class).setParameter("login", login);
+        TypedQuery<Users> query = entityManager.createQuery(
+                        "SELECT u FROM User u WHERE u.login = :login", Users.class)
+                .setParameter("login", login);
         List<Users> users = query.getResultList();
 
-        TypedQuery<Users> query1 = entityManager.createQuery("SELECT u from User u WHERE chatId = :chatId", Users.class).setParameter("chatId", chatId);
-        List<Users> users1 = query1.getResultList();
-
-        if(users.isEmpty()) {
+        if (users.isEmpty()) {
             return "Такого пользователя не существует!";
-        } else {
-            Users user = users.getFirst();
-            if (!password.equals(user.getPassword())) {
-                return "Неверный пароль!!!";
-            } else {
-                if (!users1.isEmpty()) {
-                    Users tempUser = users1.getFirst();
-
-                    if (tempUser.getLogin() != null && tempUser.getLogin().startsWith("temp_")) {
-                        entityManager.remove(tempUser);
-                        entityManager.flush();
-                    } else if (tempUser.getLogin() != null) {
-                        tempUser.setChatId(null);
-                        tempUser.setIs_registered(false);
-                        entityManager.persist(tempUser);
-                        entityManager.flush();
-                    }
-                }
-
-                setChatId(chatId, login);
-                user.setIs_registered(true);
-                entityManager.persist(user);
-                entityManager.flush();
-                return "Вы вошли в аккаунт";
-            }
         }
+
+        Users user = users.getFirst();
+
+        if (!password.equals(user.getPassword())) {
+            return "Неверный пароль!!!";
+        }
+
+        if (user.getChatId() != null && !user.getChatId().equals(chatId) && user.isIs_registered()) {
+            return "Этот аккаунт уже используется на другом устройстве!";
+        }
+
+        Users existingUser = findUserByChatId(chatId);
+
+        if (existingUser != null) {
+            if (!existingUser.getLogin().equals(login) && existingUser.isIs_registered()) {
+                return "Этот чат уже привязан к другому пользователю! Выйдите из аккаунта.";
+            }
+            entityManager.remove(existingUser);
+            entityManager.flush();
+
+        }
+        user.setChatId(chatId);
+        user.setIs_registered(true);
+        entityManager.merge(user);
+        entityManager.flush();
+
+        return "Вы вошли в аккаунт";
     }
     @Transactional
     public void logout(Long chatId) {
@@ -157,7 +167,7 @@ public class TablesService {
                 entityManager.persist(user);
                 entityManager.persist(table);
                 entityManager.flush();
-                return "Вы успешло поменяли место пользователя✔";
+                return "Вы успешло поменяли место сотрудника✔";
             }
         }
     }
@@ -190,6 +200,22 @@ public class TablesService {
         entityManager.persist(user);
         entityManager.flush();
         return "Вы успешно освободили место✔";
+    }
+    @Transactional
+    public Map<String, ArrayList<String>> showAllUsers() {
+        Map<String, ArrayList<String>> all = new HashMap<>();
+        all.put("Адм", new ArrayList<>());
+        all.put("Сотр", new ArrayList<>());
+        TypedQuery<Users> query = entityManager.createQuery("SELECT u FROM User u", Users.class);
+        List<Users> users = query.getResultList();
+        for (Users u : users) {
+            if (u.isIs_admin()) {
+                all.get("Адм").add(u.getLogin() + " - " + u.getPassword());
+            } else {
+                all.get("Сотр").add(u.getLogin() + " - " + u.getPassword());
+            }
+        }
+        return all;
     }
     @Transactional
     public void changeSession(Long chatId, String session) {
@@ -239,11 +265,17 @@ public class TablesService {
     @Transactional
     public boolean checkAdmin(Long chatId) {
         Users user = findUserByChatId(chatId);
+        if (user == null) {
+            return false;
+        }
         return user.isIs_admin();
     }
     @Transactional
     public boolean checkTable(Long chatId) {
         Users user = findUserByChatId(chatId);
+        if (user == null) {
+            return false;
+        }
         return user.getTables() != null;
     }
     @Transactional
@@ -257,21 +289,26 @@ public class TablesService {
     }
     @Transactional
     public void ensureUserExists(Long chatId) {
-        if (findUserByChatId(chatId) == null) {
-            TypedQuery<Session> query = entityManager.createQuery("SELECT s FROM UserSession s WHERE s.name = 'Ничего'", Session.class);
-            Session session = query.getSingleResult();
-
-            Users user = new Users();
-            user.setChatId(chatId);
-            user.setAction(session);
-            user.setIs_registered(false);
-            user.setIs_admin(false);
-            user.setCreated(LocalDate.now());
-            user.setLogin("temp_" + chatId);
-            user.setPassword("temp");
-            entityManager.persist(user);
-            entityManager.flush();
+        Users existingUser = findUserByChatId(chatId);
+        if (existingUser != null) {
+            return;
         }
+
+        // Создаем только если нет пользователя
+        TypedQuery<Session> query = entityManager.createQuery(
+                "SELECT s FROM UserSession s WHERE s.name = 'Ничего'", Session.class);
+        Session session = query.getSingleResult();
+
+        Users user = new Users();
+        user.setChatId(chatId);
+        user.setAction(session);
+        user.setIs_registered(false);
+        user.setIs_admin(false);
+        user.setCreated(LocalDate.now());
+        user.setLogin("temp_" + chatId);
+        user.setPassword("temp");
+        entityManager.persist(user);
+        entityManager.flush();
     }
     @Transactional
     public Map<Integer, ArrayList<String>> getAllUntakenTables() {

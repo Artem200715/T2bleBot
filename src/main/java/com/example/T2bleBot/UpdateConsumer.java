@@ -33,8 +33,11 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             String messageText = update.getMessage().getText();
             String username = update.getMessage().getChat().getUserName();
             ts.ensureUserExists(chatId);
+
             String session = ts.getSession(chatId);
             boolean isReg = ts.Is_registered(chatId);
+            System.out.println("MESSAGE: chatId=" + chatId + " text=" + messageText + " session=" + session + " isReg=" + isReg);
+
 
             if ((messageText.equals("/start") && !isReg)) {
                 try {
@@ -79,7 +82,9 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                         case "Такого пользователя не существует!":
                             sendMessage(chatId, login);
                             break;
-
+                        case "Этот чат уже привязан к другому пользователю! Выйдите из аккаунта.":
+                            sendMessage(chatId, login);
+                            break;
                     }
                 } else {
                     sendMessage(chatId, "Неправильный формат!!!");
@@ -106,6 +111,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 sendMessage(chatId, ts.deleteAccount(messageText));
                 try {
                     sendMenuButton(chatId, adm, "Выберите действие");
+                    ts.changeSession(chatId, "Ничего");
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
@@ -141,17 +147,19 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         } else if(update.hasCallbackQuery()) {
             Long chatId = update.getCallbackQuery().getMessage().getChatId();
             String username = update.getCallbackQuery().getFrom().getUserName();
+            ts.ensureUserExists(chatId);
+            String session = ts.getSession(chatId);
+            boolean isReg = ts.Is_registered(chatId);
             String data = update.getCallbackQuery().getData();
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
-            boolean isReg = ts.Is_registered(chatId);
             boolean adm = ts.checkAdmin(chatId);
             boolean admin = false;
-            if (data.equals("registration") && !isReg && ts.getSession(chatId).equals("Ничего")) {
+            if (data.equals("registration") && !isReg && "Ничего".equals(ts.getSession(chatId))) {
                 editMessage(chatId, messageId, "Введите логин и пароль через пробел ( EgorStepn 12435 )");
                 ts.changeSession(chatId, "Вход в аккаунт");
             } else if (data.equals("registration")) {
                 sendMessage(chatId, "Вы уже зарегистрированы!!!");
-            } else if (data.equals("quit") && isReg && ts.getSession(chatId).equals("Ничего")) {
+            } else if (data.equals("quit") && isReg && "Ничего".equals(ts.getSession(chatId))) {
                 ts.logout(chatId);
                 editMessage(chatId, messageId, "Вы вышли из аккаунта");
                 try {
@@ -159,17 +167,24 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
-            } else if (data.equals("role") && isReg && ts.getSession(chatId).equals("Ничего")) {
+            } else if (data.equals("role") && isReg && "Ничего".equals(ts.getSession(chatId))) {
                 try {
                     sendRoleButton(chatId, messageId, "Выберите роль:");
                     ts.changeSession(chatId, "Выбор роли");
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
-            } else if(data.equals("back") && isReg && !ts.getSession(chatId).equals("Ничего")) {
+            } else if(data.equals("back") && isReg && !"Ничего".equals(ts.getSession(chatId)) && !"Показ".equals(ts.getSession(chatId))) {
                 try {
                     ts.changeSession(chatId, "Ничего");
                     sendMenuButton(chatId, messageId, adm, "Выберите действие");
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+            } else if(data.equals("back") && isReg && !"Ничего".equals(ts.getSession(chatId))) {
+                try {
+                    ts.changeSession(chatId, "Ничего");
+                    sendMenuButton(chatId, adm, "Выберите действие");
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
@@ -204,7 +219,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                 editMessage(chatId, messageId, ts.takeTable(tableNumber, chatId));
                 ts.changeSession(chatId, "Ничего");
                 try {
-                    sendMenuButton(chatId, messageId, adm, "Выберите действие");
+                    sendMenuButton(chatId, adm, "Выберите действие");
                 } catch (TelegramApiException e) {
                     throw new RuntimeException(e);
                 }
@@ -246,8 +261,28 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
             } else if(data.equals("aClearTable") && isReg && ts.getSession(chatId).equals("Ничего")) {
                 ts.changeSession(chatId, "Вписывает логин для удаления");
                 editMessage(chatId, messageId, "Впишите логин пользователя, которого хотите снять с места");
+            } else if(data.equals("show") && isReg && ts.getSession(chatId).equals("Ничего")) {
+                Map<String, ArrayList<String>> users = ts.showAllUsers();
+                StringBuilder text = new StringBuilder();
+                ArrayList<String> admins = users.get("Адм");
+                ArrayList<String> sotrud = users.get("Сотр");
+                text.append("Администраторы:");
+                for (String i : admins) {
+                    text.append("\n").append(i);
+                }
+                text.append("\n\nСотрудники:");
+                for (String i : sotrud) {
+                    text.append("\n").append(i);
+                }
+                try {
+                    sendBackButton(chatId, messageId, text.toString());
+                    ts.changeSession(chatId, "Показ");
+                } catch (TelegramApiException e) {
+                    throw new RuntimeException(e);
+                }
+
             }else if (!isReg) {
-                sendMessage(chatId, "Вы не зарегистрировались!");
+                sendMessage(chatId, "Вы не авторизовались!");
             } else {
                 sendMessage(chatId, "Кнопка не сработала, так как вы уже её вызывали");
             }
@@ -293,7 +328,10 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                     createBtn("Принудительно занять место", "aTakeTable")
             ));
             keyboard.add(new InlineKeyboardRow(
-                    createBtn("Принудительно освободить место место", "aClearTable")
+                    createBtn("Принудительно освободить место", "aClearTable")
+            ));
+            keyboard.add(new InlineKeyboardRow(
+                    createBtn("Показать всех пользователей", "show")
             ));
             keyboard.add(new InlineKeyboardRow(
                     createBtn("Выйти из аккаунта❌", "quit")
@@ -335,7 +373,10 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
                     createBtn("Принудительно занять место", "aTakeTable")
             ));
             keyboard.add(new InlineKeyboardRow(
-                    createBtn("Принудительно освободить место место", "aClearTable")
+                    createBtn("Принудительно освободить место", "aClearTable")
+            ));
+            keyboard.add(new InlineKeyboardRow(
+                    createBtn("Показать всех пользователей", "show")
             ));
             keyboard.add(new InlineKeyboardRow(
                     createBtn("Выйти из аккаунта❌", "quit")
@@ -372,7 +413,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
             for (Integer floor : floors) {
                 if (!tables.get(floor).isEmpty()) {
-                    currentRow.add(createBtn(floor.toString(), "floor_" + floor.toString()));
+                    currentRow.add(createBtn(floor.toString() + " этаж", "floor_" + floor.toString()));
                     if (currentRow.size() == 3) {
                         keyboard.add(currentRow);
                         currentRow = new InlineKeyboardRow();
@@ -406,7 +447,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
 
         for (Integer floor : floors) {
             if (!tables.get(floor).isEmpty()) {
-                currentRow.add(createBtn(floor.toString(), "floor_" + floor.toString()));
+                currentRow.add(createBtn(floor.toString() + " этаж", "floor_" + floor.toString()));
                 if (currentRow.size() == 3) {
                     keyboard.add(currentRow);
                     currentRow = new InlineKeyboardRow();
@@ -440,6 +481,19 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         List<InlineKeyboardRow> keyboard = new ArrayList<>();
         InlineKeyboardRow currentRow = new InlineKeyboardRow();
         ArrayList<String> tables = all.get(Integer.parseInt(number));
+        tables.sort((a, b) -> {
+            String[] aParts = a.split("\\.");
+            String[] bParts = b.split("\\.");
+
+            int aFloor = Integer.parseInt(aParts[0]);
+            int bFloor = Integer.parseInt(bParts[0]);
+
+            if (aFloor != bFloor) {
+                return Integer.compare(aFloor, bFloor);
+            }
+
+            return Integer.compare(Integer.parseInt(aParts[1]), Integer.parseInt(bParts[1]));
+        });
         for (String table : tables) {
             currentRow.add(createBtn(table, "table_" + table));
             if (currentRow.size() == 4) {
@@ -469,7 +523,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         keyboard.add(new InlineKeyboardRow(
                 createBtn("Администратор", "adm"),
                 createBtn("Назад", "back"),
-                createBtn("Работник", "nonAdm")
+                createBtn("Сотрудник", "nonAdm")
         ));
         editMessage.setReplyMarkup(new InlineKeyboardMarkup(keyboard));
         telegramClient.execute(editMessage);
@@ -487,6 +541,7 @@ public class UpdateConsumer implements LongPollingSingleThreadUpdateConsumer {
         editMessage.setReplyMarkup(new InlineKeyboardMarkup(keyboard));
         telegramClient.execute(editMessage);
     }
+
 
     public void sendStartButton(Long chatId, String answer) throws TelegramApiException {
         SendMessage message = SendMessage.builder()

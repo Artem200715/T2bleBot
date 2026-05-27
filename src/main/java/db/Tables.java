@@ -2,6 +2,8 @@ package db;
 
 import jakarta.persistence.*;
 
+import java.time.LocalDate;
+
 
 @Entity(name = "UserTables")
 @Table(name = "tables")
@@ -15,16 +17,20 @@ public class Tables {
     private int floor;
     @Column(name = "is_taken")
     private boolean is_taken;
+    @Column(name = "reservation_date")
+    private LocalDate dateOfReservation;
     @OneToOne(mappedBy = "tables")
     private Users users;
 
     public Tables() {
     }
 
-    public Tables(int id, String number, int floor, Users users) {
+    public Tables(int id, String number, int floor, boolean is_taken, LocalDate dateOfReservation, Users users) {
         this.id = id;
         this.number = number;
         this.floor = floor;
+        this.is_taken = is_taken;
+        this.dateOfReservation = dateOfReservation;
         this.users = users;
     }
 
@@ -66,5 +72,13 @@ public class Tables {
 
     public boolean isIs_taken() {
         return is_taken;
+    }
+
+    public LocalDate getDateOfReservation() {
+        return dateOfReservation;
+    }
+
+    public void setDateOfReservation(LocalDate dateOfReservation) {
+        this.dateOfReservation = dateOfReservation;
     }
 }
